@@ -10,3 +10,5 @@ venv/
 .comp_results_profiler/
 # VS Code settings
 .vscode/
+# macOS Finder metadata
+.DS_Store
