@@ -49,7 +49,7 @@ if "matches" not in st.session_state:
 # Step 1: Company Search
 # ------------------------------
 st.title("BSE Data Viewer")
-company_input = st.text_input("Enter Company Name", value="TCS")
+company_input = st.text_input("Enter Company Name", value="HDFC")
 search_button = st.button("Search Company")
 
 if search_button and company_input:
