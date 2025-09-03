@@ -115,7 +115,7 @@ if selected_company:
 
     col3, col4 = st.columns(2)
     end_quarter = col3.number_input("End Quarter (1-4)", min_value=1, max_value=4, value=2)
-    end_fy = col4.number_input("End Fiscal Year", min_value=2000, max_value=2100, value=2025)
+    end_fy = col4.number_input("End Fiscal Year", min_value=2000, max_value=2100, value=2026)
 
 # Check if the selected range exceeds 5 years
     total_years = end_fy - start_fy + 1
