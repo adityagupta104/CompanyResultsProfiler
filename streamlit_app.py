@@ -87,7 +87,7 @@ if "extracted_results" not in st.session_state:
 st.title("Company Financial Results Profiler")
 st.write("Helps retrieve documents uploaded on BSE and extract financial results using Google Gemini model.")
 
-company_input = st.text_input("Enter Company Name", value="HDFC")
+company_input = st.text_input("Enter Company Name", value="Britannia")
 search_button = st.button("Search Company")
 
 if search_button and company_input:
