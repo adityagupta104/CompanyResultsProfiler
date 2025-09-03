@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from bse_core import get_range_quarters_data, pivot_announcement_links, search_bse_company
+import re
 
 PDF_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/6/60/Adobe_Acrobat_Reader_icon_%282020%29.svg"
 
@@ -33,6 +34,16 @@ def render_pivot_html_with_icons(pivot_df):
     html_render = html_df["Link"]
     return html_render.to_html(escape=False)
 
+# ------------------------------
+# Quarter sorting helper
+# ------------------------------
+def quarter_sort_key(q):
+    match = re.match(r"Q(\d) FY(\d+)", q)
+    if match:
+        q_num = int(match.group(1))
+        fy_year = int(match.group(2))
+        return (fy_year, q_num)
+    return (0, 0)
 
 # ------------------------------
 # Session state init
@@ -115,6 +126,14 @@ if selected_company:
                     st.warning("No data found for this company and date range.")
                 else:
                     pivot_df = pivot_announcement_links(df, configs)
+                    
+                    # Sort columns by fiscal year and quarter
+                    pivot_df = pivot_df.sort_index(
+                        axis=1,
+                        level=1,
+                        key=lambda x: x.map(quarter_sort_key),
+                        ascending=True
+                    )
 
                     pivot_html = render_pivot_html_with_icons(pivot_df)
 
