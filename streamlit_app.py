@@ -84,7 +84,8 @@ if "extracted_results" not in st.session_state:
 # ------------------------------
 # Step 1: Company Search
 # ------------------------------
-st.title("BSE Data Viewer")
+st.title("Company Financial Results Profiler")
+st.write("Helps retrieve documents uploaded on BSE and extract financial results using Google Gemini model.")
 
 company_input = st.text_input("Enter Company Name", value="HDFC")
 search_button = st.button("Search Company")
