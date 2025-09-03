@@ -46,6 +46,22 @@ def quarter_sort_key(q):
     return (0, 0)
 
 # ------------------------------
+# Wrapper for core bse functions with caching
+# Caching search results for 1 day
+# ------------------------------
+@st.cache_data(ttl=86400)  # 1 day cache
+def search_bse_company_cached(company_input):
+    return search_bse_company(company_input)
+    
+# ------------------------------
+# Wrapper for core bse functions with caching
+# Caching search results for 1 day
+# ------------------------------
+@st.cache_data(ttl=86400)  # 1 day cache
+def get_range_quarters_data_cached(scrip_code, start_quarter, start_fy, end_quarter, end_fy, configs):
+    return get_range_quarters_data(scrip_code, start_quarter, start_fy, end_quarter, end_fy, configs)
+
+# ------------------------------
 # Session state init
 # ------------------------------
 if "scrip_code" not in st.session_state:
@@ -60,11 +76,12 @@ if "matches" not in st.session_state:
 # Step 1: Company Search
 # ------------------------------
 st.title("BSE Data Viewer")
+
 company_input = st.text_input("Enter Company Name", value="HDFC")
 search_button = st.button("Search Company")
 
 if search_button and company_input:
-    matches = search_bse_company(company_input)
+    matches = search_bse_company_cached(company_input.lower())
     st.session_state.matches = matches  # save in session_state
     if not matches:
         st.warning("No matches found. Please refine your search.")
@@ -120,7 +137,7 @@ if selected_company:
         fetch_button = st.button("Fetch BSE Data")
         if fetch_button:
             with st.spinner("Fetching data..."):
-                df = get_range_quarters_data(scrip_code, start_quarter, start_fy, end_quarter, end_fy, configs)
+                df = get_range_quarters_data_cached(scrip_code, start_quarter, start_fy, end_quarter, end_fy, configs)
                 
                 if df.empty:
                     st.warning("No data found for this company and date range.")

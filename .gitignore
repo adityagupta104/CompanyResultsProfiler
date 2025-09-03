@@ -1,0 +1,11 @@
+# Python
+*.pyc
+__pycache__/
+.env/
+*.env
+# Conda environments
+env/
+venv/
+.comp_results_profiler/
+# VS Code settings
+.vscode/
