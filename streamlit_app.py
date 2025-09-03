@@ -9,7 +9,7 @@ from genai_extract_results import get_extracted_results, json_to_dataframe
 
 PDF_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/6/60/Adobe_Acrobat_Reader_icon_%282020%29.svg"
 
-load_dotenv()  # take environment variables from .env file
+load_dotenv()  # take environment variables from .env file, only needed for my local purpose
 
 # ------------------------------
 # Helper to convert links to PDF icons

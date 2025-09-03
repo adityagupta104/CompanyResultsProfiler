@@ -4,5 +4,6 @@ numpy==1.26.1
 requests==2.32.0
 beautifulsoup4==4.13.0
 python-dateutil==2.8.2
-streamlit-tags==1.2.8
 itables==2.5.2
+python-dotenv>=1.0.0
+google-genai>=0.4.0
