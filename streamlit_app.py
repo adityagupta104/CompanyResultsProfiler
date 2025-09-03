@@ -174,7 +174,9 @@ if selected_company:
             st.markdown(pivot_html, unsafe_allow_html=True)
 
             # Extract available quarters
+            st.markdown("### Extract Financial Results using Google Gemini")
             available_quarters = pivot_df.columns.levels[1]
+            st.write("Results extraction wont work for Banks/NBFCs/Financials, yet!")
             selected_quarter = st.selectbox("Select a Quarter Extract Financials", sorted(available_quarters, key=quarter_sort_key))
 
             # Conditional API key input for the user

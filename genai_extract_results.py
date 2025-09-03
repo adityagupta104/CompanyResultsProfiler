@@ -38,7 +38,7 @@ def get_gemini_client(api_key=None):
 ####################################
 # Extract Results for a given file BytesIO Object
 ####################################
-def get_extracted_results(quarter, year, type, pdf_bytesIO, api_key=None):
+def get_extracted_results(quarter, year, type, pdf_bytesIO, api_key=None, max_retries=3, wait_seconds=5):
     client = get_gemini_client(api_key)
 
     pdf_bytesIO.seek(0)
@@ -48,16 +48,26 @@ def get_extracted_results(quarter, year, type, pdf_bytesIO, api_key=None):
     instructions = extract_results_prompt.instruction
     prompt = extract_results_prompt.Prompt.format(quarter=quarter, year=year, type=type)
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",   # free model
-        config=types.GenerateContentConfig(
-            system_instruction=instructions),
-        contents=[
-            {"file_data": {"file_uri": file.uri}},
-            {"text": prompt}
-        ],
-    )
-    return response
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                config=types.GenerateContentConfig(system_instruction=instructions),
+                contents=[
+                    {"file_data": {"file_uri": file.uri}},
+                    {"text": prompt}
+                ],
+            )
+            return response  # success
+        except ClientError as e:
+            if e.status_code == 503:  # server unavailable
+                if attempt < max_retries:
+                    time.sleep(wait_seconds)
+                    continue  # retry
+                else:
+                    raise RuntimeError(f"Gemini API 503 error after {max_retries} retries.") from e
+            else:
+                raise  # re-raise any other errors
 
 if __name__ == "__main__":
     """
