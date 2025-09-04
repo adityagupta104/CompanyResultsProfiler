@@ -1,7 +1,7 @@
 import requests
 import streamlit as st
 import pandas as pd
-import re
+import re, os
 from io import BytesIO
 from dotenv import load_dotenv
 from bse_core import get_range_quarters_data, pivot_announcement_links, search_bse_company
@@ -80,7 +80,10 @@ if "df" not in st.session_state:
     st.session_state.df = None
 if "extracted_results" not in st.session_state:
     st.session_state.extracted_results = None
-
+if "selected_quarter" not in st.session_state:
+    st.session_state.selected_quarter = None
+if "pdf_link" not in st.session_state:
+    st.session_state.pdf_link = None
 # ------------------------------
 # Step 1: Company Search
 # ------------------------------
@@ -182,12 +185,18 @@ if selected_company:
             type = st.selectbox("Select which results you want to extract", ["Consolidated", "Standalone"])
 
             # Conditional API key input for the user
-            user_api_key = ""
-            st.write("Provide your Google Gemini Key to extract results. If you dont have it, sign up at https://aistudio.google.com/apikey to get free access to Gemini-2.5-flash model.")
-            user_api_key = st.text_input("Enter your Google Gemini API Key", type="password", value="")
+            if os.getenv("GEMINI_API_KEY") is None:
+                user_api_key = ""
+                st.write("Provide your Google Gemini Key to extract results. If you dont have it, sign up at https://aistudio.google.com/apikey to get free access to Gemini-2.5-flash model.")
+                user_api_key = st.text_input("Enter your Google Gemini API Key", type="password", value="")
+            else:
+                user_api_key = os.getenv("GEMINI_API_KEY")
+                st.info("Using GEMINI_API_KEY from environment.")
 
             extract_results = st.button("Extract Results")
             if extract_results:
+                st.session_state.selected_quarter = selected_quarter
+                st.session_state.pdf_link = None # reset previous pdf link
                 st.session_state.extracted_results = None  # reset previous results
                 if user_api_key == "":
                     st.warning("Please provide your Google Gemini API key to proceed.")
@@ -199,6 +208,7 @@ if selected_company:
                         if not df_filtered.empty:
                             # Pick the first PDF link
                             pdf_link = df_filtered.iloc[0]["Link"]
+                            st.session_state.pdf_link = pdf_link
                             if pdf_link:
                                 st.info(f"Fetching PDF from: {pdf_link}")
                                 
@@ -219,6 +229,7 @@ if selected_company:
 
                                 # Convert JSON to DataFrame
                                 df_results = json_to_dataframe(response.text)
+                                df_results.rename(columns={"Value": selected_quarter}, inplace=True)
                                 st.session_state.extracted_results = df_results
 
                             else:
@@ -231,12 +242,17 @@ if selected_company:
                 st.subheader("Extracted Financials")
                 st.dataframe(st.session_state.extracted_results)
 
+                col1, col2 = st.columns(2)
                 # Download button for CSV
                 csv_bytes = st.session_state.extracted_results.to_csv(index=False).encode("utf-8")
-                st.download_button(
+                col1.download_button(
                     label="Download Extracted Results as CSV",
                     data=csv_bytes,
                     file_name=f"financials_{selected_quarter}.csv",
                     mime="text/csv"
+                )
+                col2.markdown(
+                    f'<a href="{st.session_state.pdf_link}" target="_blank" download>Download Original BSE PDF ({st.session_state.selected_quarter})</a>',
+                    unsafe_allow_html=True
                 )
 
