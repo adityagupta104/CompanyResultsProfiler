@@ -146,36 +146,6 @@ def get_range_quarters_data(scrip_code, start_q, start_fy, end_q, end_fy, config
     return pd.concat(dfs, ignore_index=True)
 
 
-def pivot_announcement_links(df, configs):
-    """
-    Pivot DataFrame to have Configs as rows and Quarter_FY as columns.
-    Each cell contains clickable links.
-    """
-    if df.empty:
-        return pd.DataFrame()
-    
-    unique_config_order = []
-    seen = set()
-    for cfg in configs:
-        if cfg["name"] not in seen:
-            unique_config_order.append(cfg["name"])
-            seen.add(cfg["name"])
-
-    df["Config"] = pd.Categorical(df["Config"], categories=unique_config_order, ordered=True)
-
-    df["Quarter_FY"] = df.apply(lambda x: f"Q{x.Quarter} FY{x.FiscalYear}", axis=1)
-
-    pivot_df = df.pivot_table(
-        index="Config",
-        columns="Quarter_FY",
-        values=["Link", "Headline"],
-        aggfunc=lambda x: list(x)
-        #aggfunc=lambda links: "\n".join([f"{l}" for l in links if l])
-    ).fillna("")
-
-    return pivot_df
-
-
 def search_bse_company(query: str):
     """
     Search BSE for a company by name/ticker and return a list of matches with scrip codes.

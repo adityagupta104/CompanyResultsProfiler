@@ -1,6 +1,7 @@
 from io import BytesIO
 from google import genai
 from google.genai import types
+from google.genai.errors import ClientError
 from itables import show
 import extract_results_prompt
 import os
@@ -23,7 +24,11 @@ def json_to_dataframe(response_text: str) -> pd.DataFrame:
     """
     # Parse the JSON string into a Python dictionary
     cleaned_text = re.sub(r"^```json\s*|\s*```$", "", response_text.strip(), flags=re.MULTILINE)
-    data_dict = json.loads(cleaned_text)
+
+    if len(cleaned_text.strip()) == 0:
+        data_dict = {}
+    else:
+        data_dict = json.loads(cleaned_text)
     
     # Convert dictionary to DataFrame
     df = pd.DataFrame(list(data_dict.items()), columns=["Field", "Value"])

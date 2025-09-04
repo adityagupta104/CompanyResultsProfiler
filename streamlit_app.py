@@ -1,127 +1,50 @@
-import requests
-import streamlit as st
-import pandas as pd
-import re, os
-from io import BytesIO
-from dotenv import load_dotenv
-from bse_core import get_range_quarters_data, pivot_announcement_links, search_bse_company
-from genai_extract_results import get_extracted_results, json_to_dataframe
 
-PDF_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/6/60/Adobe_Acrobat_Reader_icon_%282020%29.svg"
+import traceback
+import streamlit as st
+import os
+
+from dotenv import load_dotenv
+
+from streamlit_app_state import StreamlitAppState
+from streamlit_helpers import configs, extract_results_from_pdf_link, pivot_announcement_links, quarter_sort_key, get_range_quarters_data_cached, render_pivot_html_with_icons, search_bse_company_cached
+
+
 
 load_dotenv()  # take environment variables from .env file, only needed for my local purpose
 
-# ------------------------------
-# Helper to convert links to PDF icons
-# ------------------------------
-def render_pivot_html_with_icons(pivot_df):
-    """
-    Convert MultiIndex pivot_df to HTML where each cell shows PDF icon(s)
-    with Headline tooltip on hover.
-    """
-    html_df = pivot_df.copy()
-
-    for col in pivot_df.columns.levels[1]:  # iterate over quarters
-        link_col = ("Link", col)
-        headline_col = ("Headline", col)
-
-        if link_col in pivot_df.columns and headline_col in pivot_df.columns:
-            html_df[link_col] = pivot_df.apply(
-                lambda row: " ".join(
-                    f'<a href="{url}" target="_blank" title="{title}">'
-                    f'<img src="{PDF_ICON_URL}" width="20" height="20"></a>'
-                    for url, title in zip(row[link_col] or [], row[headline_col] or [])
-                    if url
-                ),
-                axis=1
-            )
-
-    # Only keep Link level for rendering
-    html_render = html_df["Link"]
-    return html_render.to_html(escape=False)
+app_state = StreamlitAppState() # Initialize session state manager
 
 # ------------------------------
-# Quarter sorting helper
+# UI for company search and selection
 # ------------------------------
-def quarter_sort_key(q):
-    match = re.match(r"Q(\d) FY(\d+)", q)
-    if match:
-        q_num = int(match.group(1))
-        fy_year = int(match.group(2))
-        return (fy_year, q_num)
-    return (0, 0)
+def company_select_section():
+    # Step 1: Company Search
+    company_input = st.text_input("Enter Company Name", value="Britannia",)
+    search_button = st.button("Search Company")
 
-# ------------------------------
-# Wrapper for core bse functions with caching
-# Caching search results for 1 day
-# ------------------------------
-@st.cache_data(ttl=86400)  # 1 day cache
-def search_bse_company_cached(company_input):
-    return search_bse_company(company_input)
+    if search_button and company_input:
+        # invalidate previous data
+        app_state.reset_all() # new company search, reset all state
+        app_state.company_matches = search_bse_company_cached(company_input.lower())
+        if not app_state.company_matches:
+            st.warning("No matches found. Please refine your search.")
+
+    # Step 2: Company selection dropdown
+    # if company search gave any matches, then give the user selection
+    # set scrip_code and company_name in session state based on selection
+    if app_state.company_matches:
+        options = [f"{m['name']} ({m['scrip_code']})" for m in app_state.company_matches]
+        selection = st.selectbox("Select a company from the matches", options)
     
-# ------------------------------
-# Wrapper for core bse functions with caching
-# Caching search results for 1 day
-# ------------------------------
-@st.cache_data(ttl=86400)  # 1 day cache
-def get_range_quarters_data_cached(scrip_code, start_quarter, start_fy, end_quarter, end_fy, configs):
-    return get_range_quarters_data(scrip_code, start_quarter, start_fy, end_quarter, end_fy, configs)
+        # Extract scrip_code from selection
+        app_state.scrip_code = selection.split("(")[-1].strip(")")
+        app_state.company_name = selection.split(" ")[0].strip()
 
 # ------------------------------
-# Session state init
+# UI to Fetch BSE documents section
 # ------------------------------
-if "scrip_code" not in st.session_state:
-    st.session_state.scrip_code = None
-if "company_name" not in st.session_state:
-    st.session_state.company_name = ""
-if "matches" not in st.session_state:
-    st.session_state.matches = []
-if "df" not in st.session_state:
-    st.session_state.df = None
-if "extracted_results" not in st.session_state:
-    st.session_state.extracted_results = None
-if "selected_quarter" not in st.session_state:
-    st.session_state.selected_quarter = None
-if "pdf_link" not in st.session_state:
-    st.session_state.pdf_link = None
-# ------------------------------
-# Step 1: Company Search
-# ------------------------------
-st.title("Company Financial Results Profiler")
-st.write("Helps retrieve documents uploaded on BSE and extract financial results using Google Gemini model.")
-
-company_input = st.text_input("Enter Company Name", value="Britannia")
-search_button = st.button("Search Company")
-
-if search_button and company_input:
-    # invalidate previous data
-    st.session_state.df = None
-    matches = search_bse_company_cached(company_input.lower())
-    st.session_state.matches = matches  # save in session_state
-    if not matches:
-        st.warning("No matches found. Please refine your search.")
-
-
-# ------------------------------
-# Step 2: Company selection dropdown
-# ------------------------------
-selected_company = None
-if st.session_state.matches:
-    options = [f"{m['name']} ({m['scrip_code']})" for m in st.session_state.matches]
-    selection = st.selectbox("Select a company from the matches", options)
-    
-    # Extract scrip_code from selection
-    scrip_code = selection.split("(")[-1].strip(")")
-    st.session_state.scrip_code = scrip_code
-    st.session_state.company_name = selection.split("(")[0].strip()
-    selected_company = st.session_state.company_name
-
-
-# ------------------------------
-# Step 3: Show rest only if company selected
-# ------------------------------
-if selected_company:
-    st.subheader(f"Fetching BSE data for: {selected_company}")
+def fetch_bse_documents_section():
+    st.subheader(f"Fetch BSE Documents for {app_state.company_name} ({app_state.scrip_code})")
 
     # Quarter & FY inputs
     col1, col2 = st.columns(2)
@@ -137,122 +60,130 @@ if selected_company:
     if total_years > 5:
         st.error("Please select a range of **at most 5 fiscal years**.")
     
-    # Example configs
-    configs = [
-        {"name": "Results", "category": "Result", "lookahead": True},  
-        {"name": "Results", "category": "Board Meeting", "filter": "result", "lookahead": True},  
-        {"name": "Presentation", "category": "Company Update", "filter": "presentation", "lookahead": True},
-        {"name": "Transcript", "category": "Company Update", "filter": "transcript", "lookahead": True},
-        {"name": "Insider trading", "category": "Insider Trading / SAST"},
-        {"name": "Press Release", "category": "Company Update", "filter": "press release"},
-        {"name": "Resignations", "category": "Company Update", "filter": "resignation"}
-    ]
-
     # Fetch button
     fetch_button = st.button("Fetch BSE Data")
 
     if fetch_button and total_years <= 5:
         with st.spinner("Fetching data..."):
-            df = get_range_quarters_data_cached(scrip_code, start_quarter, start_fy, end_quarter, end_fy, configs)
-            st.session_state.df = df  # save in session_state
-            
-    df = st.session_state.df
-    if df is not None:
-        if df.empty:
+            app_state.reset_bse_documents_and_extracted_results() # reset previous documents and extracted results
+            app_state.bse_documents_df = get_range_quarters_data_cached(app_state.scrip_code, start_quarter, start_fy, end_quarter, end_fy, configs)
+
+    if app_state.bse_documents_df is not None:
+        if app_state.bse_documents_df.empty:
             st.warning("No data found for this company and date range.")
         else:
-            pivot_df = pivot_announcement_links(df, configs)
-            
-            # Sort columns by fiscal year and quarter
-            pivot_df = pivot_df.sort_index(
-                axis=1,
-                level=1,
-                key=lambda x: x.map(quarter_sort_key),
-                ascending=True
-            )
-
-            pivot_html = render_pivot_html_with_icons(pivot_df)
+            app_state.bse_documents_pivot_df = pivot_announcement_links(app_state.bse_documents_df, configs)
+            pivot_html = render_pivot_html_with_icons(app_state.bse_documents_pivot_df)
 
             st.success("Data fetched!")
             st.markdown("### Key documents uploaded to BSE")
             st.markdown(pivot_html, unsafe_allow_html=True)
 
-            # Extract available quarters
-            st.markdown("### Extract Financial Results using Google Gemini")
-            available_quarters = pivot_df.columns.levels[1]
-            st.write("Results extraction wont work for Banks/NBFCs/Financials, yet!")
-            selected_quarter = st.selectbox("Select a Quarter to Extract Financials", sorted(available_quarters, key=quarter_sort_key, reverse=True))
-            type = st.selectbox("Select which results you want to extract", ["Consolidated", "Standalone"])
+def extract_results_section():
+    # Extract available quarters
+    st.markdown("### Extract Financial Results using Google Gemini")
+    available_quarters = app_state.bse_documents_pivot_df.columns.levels[1]
+    st.write("Results extraction wont work for Banks/NBFCs/Financials, yet!")
+    app_state.extract_selected_quarter = st.selectbox("Select a Quarter to Extract Financials", sorted(available_quarters, key=quarter_sort_key, reverse=True))
+    app_state.extract_type = st.selectbox("Select which results you want to extract", ["Consolidated", "Standalone"])
 
-            # Conditional API key input for the user
-            if os.getenv("GEMINI_API_KEY") is None:
-                user_api_key = ""
-                st.write("Provide your Google Gemini Key to extract results. If you dont have it, sign up at https://aistudio.google.com/apikey to get free access to Gemini-2.5-flash model.")
-                user_api_key = st.text_input("Enter your Google Gemini API Key", type="password", value="")
+    # Conditional API key input for the user
+    if os.getenv("GEMINI_API_KEY") is None:
+        user_api_key = ""
+        st.write("Provide your Google Gemini Key to extract results. If you dont have it, sign up at https://aistudio.google.com/apikey to get free access to Gemini-2.5-flash model.")
+        user_api_key = st.text_input("Enter your Google Gemini API Key", type="password", value="")
+    else:
+        user_api_key = os.getenv("GEMINI_API_KEY")
+        st.info("Using GEMINI_API_KEY from environment.")
+
+    extract_results = st.button("Extract Results")
+    if extract_results:
+        app_state.reset_extracted_results() # reset previous extracted results
+        if user_api_key == "":
+            st.warning("Please provide your Google Gemini API key to proceed.")
+        else:
+            app_state.extract_link_count = 0
+            extract_results_from_pdf_ui(user_api_key)
+
+    # Display extracted results if available
+    if app_state.extracted_results is not None:
+        st.subheader(f'Extracted Financials for {app_state.extract_selected_quarter}')
+        st.dataframe(app_state.extracted_results)
+
+        if (
+            app_state.extracted_results.empty
+            or app_state.extract_selected_quarter not in app_state.extracted_results.columns
+            or app_state.extracted_results[app_state.extract_selected_quarter].fillna(0).sum() == 0
+        ):
+            next_pdf_link = app_state.extract_link_count+1
+            st.warning(f'No results extracted. You can try with the next PDF[{next_pdf_link}] link for this quarter if available.')   
+            try_next_pdf_file = st.button(f'Got Empty Results, Try Next PDF[{next_pdf_link}] Link for this Quarter?')
+            if try_next_pdf_file:
+                app_state.extract_link_count += 1
+                extract_results_from_pdf_ui(user_api_key)
+                # we may have new data, repaint, dont know why it needs this explicitly here
+                st.rerun()
+        else:
+            col1, col2 = st.columns(2)
+            # Download button for CSV
+            csv_bytes = app_state.extracted_results.to_csv(index=False).encode("utf-8")
+            col1.download_button(
+                label="Download Extracted Results as CSV",
+                data=csv_bytes,
+                file_name=f"financials_{app_state.company_name}_{app_state.extract_selected_quarter}.csv",
+                mime="text/csv"
+            )
+            col2.markdown(
+                f'<a href="{app_state.extract_pdf_link}" target="_blank" download>Download Original BSE PDF ({app_state.extract_selected_quarter})</a>',
+                unsafe_allow_html=True
+            )
+
+def extract_results_from_pdf_ui(user_api_key):
+    with st.spinner("Extracting data...be patient, this may take a few minutes..."):
+        # Filter df for selected quarter and Config == "results"
+        df_filtered = app_state.bse_documents_df[
+                            (app_state.bse_documents_df["Quarter_FY"] == app_state.extract_selected_quarter) & 
+                            (app_state.bse_documents_df["Config"].str.lower() == "results")
+                            ]
+        
+        if not df_filtered.empty:
+            # Pick the PDF link
+            app_state.extract_pdf_link = df_filtered.iloc[app_state.extract_link_count]["Link"]
+            if app_state.extract_pdf_link:
+                st.info(f"Letting AI do its thing on: {app_state.extract_pdf_link}")
+
+                try:
+                    df_results = extract_results_from_pdf_link(app_state.extract_selected_quarter, app_state.extract_type, app_state.extract_pdf_link, user_api_key)
+                except Exception as e:
+                    st.error(f"Error fetching or processing PDF: {e}")
+                    st.info(traceback.format_exc())
+                    df_results = None
+
+                app_state.extracted_results = df_results
             else:
-                user_api_key = os.getenv("GEMINI_API_KEY")
-                st.info("Using GEMINI_API_KEY from environment.")
+                st.warning(f'No PDF[{app_state.extract_link_count}] link found for the selected quarter.')
+        else:
+            st.warning("No 'results' found for this quarter.")
+    
 
-            extract_results = st.button("Extract Results")
-            if extract_results:
-                st.session_state.selected_quarter = selected_quarter
-                st.session_state.pdf_link = None # reset previous pdf link
-                st.session_state.extracted_results = None  # reset previous results
-                if user_api_key == "":
-                    st.warning("Please provide your Google Gemini API key to proceed.")
-                else:
-                    with st.spinner("Extracting data...be patient, this may take a few minutes..."):
-                        # Filter df for selected quarter and Config == "results"
-                        df_filtered = df[(df["Quarter_FY"] == selected_quarter) & (df["Config"].str.lower() == "results")]
-                        
-                        if not df_filtered.empty:
-                            # Pick the first PDF link
-                            pdf_link = df_filtered.iloc[0]["Link"]
-                            st.session_state.pdf_link = pdf_link
-                            if pdf_link:
-                                st.info(f"Fetching PDF from: {pdf_link}")
-                                
-                                headers = {
-                                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                                    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                                }
+# ------------------------------
+# Main APP UI
+# ------------------------------
+def main_app():
+    st.title("Company Financial Results Profiler")
+    st.write("Helps retrieve documents uploaded on BSE and extract financial results using Google Gemini model.")
 
-                                # Download PDF into BytesIO
-                                r = requests.get(pdf_link, allow_redirects=True, headers=headers)
-                                pdf_bytes = BytesIO(r.content)
+    company_select_section()
 
-                                # Extract quarter and fiscal year strings
-                                quarter, fy_str = selected_quarter.split()  # "Q2", "FY2024"
+    # ------------------------------
+    # Step 3: Show rest only if company selected
+    # ------------------------------
+    if app_state.scrip_code:
+        fetch_bse_documents_section()
 
-                                # Call Gemini to extract results
-                                response = get_extracted_results(quarter, fy_str, type, pdf_bytes, api_key=user_api_key)
+        if app_state.bse_documents_df is not None:
+            extract_results_section()
 
-                                # Convert JSON to DataFrame
-                                df_results = json_to_dataframe(response.text)
-                                df_results.rename(columns={"Value": selected_quarter}, inplace=True)
-                                st.session_state.extracted_results = df_results
-
-                            else:
-                                st.warning("No PDF link found for the selected quarter.")
-                        else:
-                            st.warning("No 'results' found for this quarter.")
-
-            # Display extracted results if available
-            if st.session_state.extracted_results is not None:
-                st.subheader("Extracted Financials")
-                st.dataframe(st.session_state.extracted_results)
-
-                col1, col2 = st.columns(2)
-                # Download button for CSV
-                csv_bytes = st.session_state.extracted_results.to_csv(index=False).encode("utf-8")
-                col1.download_button(
-                    label="Download Extracted Results as CSV",
-                    data=csv_bytes,
-                    file_name=f"financials_{selected_quarter}.csv",
-                    mime="text/csv"
-                )
-                col2.markdown(
-                    f'<a href="{st.session_state.pdf_link}" target="_blank" download>Download Original BSE PDF ({st.session_state.selected_quarter})</a>',
-                    unsafe_allow_html=True
-                )
-
+# Run the app
+if __name__ == "__main__":
+    main_app()

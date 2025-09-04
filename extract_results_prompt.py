@@ -115,6 +115,10 @@ Additionally, report any unmapped line items from the original PDF in their orig
 
 
 Never match multiple PDF line items to the same standard code — if more than one match exists, report both using original names instead.
+
+
+Some companies dont have subsidiaries or associates either, so they report only one set of results. 
+In such cases, if you are asked for consolidated results or standalone, just return the single set of results that you see for the quarter asked.
 """
 
 Prompt = "Help me extract financial results from the attached PDF. Extract results for {quarter} {year}, {type}. Output strictly in JSON format as per the instructions."
